@@ -4,7 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark light">
-  <title>Trail Export | Web Serial GPX Capture</title>
+  <meta name="description" content="Web Serial tool for MeshCore Solo: export GPX trail data and capture display screenshots over USB without installing anything.">
+  <title>MeshCore Solo | Trail &amp; Screenshot Export</title>
   <style>
     :root {
       --bg: #07111a;
@@ -421,6 +422,7 @@
     }
 
     .preview-map {
+      display: grid;
       width: 100%;
       aspect-ratio: 16 / 9;
       border-radius: 18px;
@@ -441,13 +443,11 @@
     .preview-empty {
       display: grid;
       place-items: center;
-      min-height: 180px;
+      width: 100%;
+      height: 100%;
       color: var(--muted);
       text-align: center;
       padding: 18px;
-      border-radius: 18px;
-      border: 1px dashed rgba(255, 255, 255, 0.12);
-      background: rgba(255, 255, 255, 0.02);
       line-height: 1.5;
     }
 
@@ -529,21 +529,33 @@
     .scale-track {
       appearance: none;
       width: 100%;
+      height: 22px;
+      background: transparent;
+      outline: none;
+    }
+
+    .scale-track::-webkit-slider-runnable-track {
       height: 12px;
       border-radius: 999px;
       background: linear-gradient(90deg, rgba(75, 215, 255, 0.28), rgba(140, 255, 193, 0.28));
-      outline: none;
     }
 
     .scale-track::-webkit-slider-thumb {
       appearance: none;
       width: 22px;
       height: 22px;
+      margin-top: -5px;
       border-radius: 50%;
       border: 2px solid #04111a;
       background: linear-gradient(135deg, var(--accent), var(--accent-2));
       box-shadow: 0 6px 18px rgba(75, 215, 255, 0.28);
       cursor: pointer;
+    }
+
+    .scale-track::-moz-range-track {
+      height: 12px;
+      border-radius: 999px;
+      background: linear-gradient(90deg, rgba(75, 215, 255, 0.28), rgba(140, 255, 193, 0.28));
     }
 
     .scale-track::-moz-range-thumb {
@@ -640,7 +652,6 @@
       font-size: 0.88rem;
     }
 
-    .shot-rename-input:focus,
     .shot-name-edit:focus {
       outline: none;
       border-color: rgba(75, 215, 255, 0.55);
@@ -739,6 +750,11 @@
       background: rgba(255, 202, 120, 0.06);
     }
 
+    .serial-error {
+      border-color: rgba(255, 117, 139, 0.3);
+      background: rgba(255, 117, 139, 0.08);
+    }
+
     @media (max-width: 960px) {
       .hero {
         grid-template-columns: 1fr;
@@ -780,20 +796,20 @@
       <button id="shotTabBtn" class="tab-btn" type="button" role="tab" aria-selected="false" aria-controls="screenshotPane">Screenshots</button>
     </div>
 
-    <section id="trailPane" class="tab-panel">
+    <section id="trailPane" class="tab-panel" role="tabpanel" aria-labelledby="trailTabBtn">
       <section class="hero">
       <article class="hero-card">
-        <div class="eyebrow"><span class="dot"></span> Web Serial GPX capture</div>
+        <div class="eyebrow"><span class="dot"></span> MeshCore Solo &middot; Trail GPX</div>
         <h1>Export trail data from your device without installing anything.</h1>
         <p class="lede">
-          Connect to the tracker over USB, trigger <strong>Tools &rsaquo; Trail &rsaquo; Hold Enter &rsaquo; Export (live)</strong>
-          or <strong>Export (saved)</strong> on the device, and this page will capture the raw GPX stream and turn it into a downloadable file.
+          Uses Web Serial to read the GPX stream directly from the Solo over USB and package it as a <code>.gpx</code> file ready for any mapping app — no drivers, no software to install.
         </p>
 
         <div class="hero-actions">
           <button id="connectBtn" class="primary">Connect device</button>
           <button id="disconnectBtn" class="secondary" disabled>Disconnect</button>
           <button id="clearBtn" class="ghost" disabled>Clear capture</button>
+          <a href="https://github.com/MarekZegare4/MeshCore-Solo" target="_blank" rel="noopener noreferrer" class="ghost link-btn">GitHub ↗</a>
         </div>
 
         <div class="info-grid">
@@ -819,17 +835,17 @@
           <div class="step">
             <div class="num">1</div>
             <h3>Connect</h3>
-            <p>Open this page, then click Connect and pick the tracker in the browser prompt.</p>
+            <p>Click <strong>Connect</strong> and pick the Solo device in the browser serial port picker.</p>
           </div>
           <div class="step">
             <div class="num">2</div>
             <h3>Export on device</h3>
-            <p>On the tracker, open <strong>Tools &rsaquo; Trail</strong> and start either live or saved export.</p>
+            <p>On the Solo, open <strong>Tools &rsaquo; Trail &rsaquo; Hold Enter</strong> and choose live or saved export.</p>
           </div>
           <div class="step">
             <div class="num">3</div>
             <h3>Download GPX</h3>
-            <p>When the capture is finalized, you'll get a download link plus an automatic file download.</p>
+            <p>Once the export finishes, click <strong>Download GPX</strong> to save the file.</p>
           </div>
         </div>
       </article>
@@ -838,10 +854,12 @@
         <h2>Capture status</h2>
         <div id="environmentBanner" class="status-banner"></div>
 
+        <!-- status pills hidden — info covered by the environment banner above
         <div class="status-row">
           <div id="serialSupportPill" class="pill"><span class="dot"></span><span>Web Serial</span></div>
           <div id="secureContextPill" class="pill"><span class="dot"></span><span>Secure context</span></div>
         </div>
+        -->
 
         <div class="progress-wrap">
           <div class="progress-meta">
@@ -897,10 +915,10 @@
     </section>
     </section>
 
-    <section id="screenshotPane" class="tab-panel hidden" aria-label="Screenshot capture">
+    <section id="screenshotPane" class="tab-panel hidden" role="tabpanel" aria-labelledby="shotTabBtn">
       <section class="hero">
         <article class="hero-card">
-          <div class="eyebrow"><span class="dot"></span> Mesh screenshot capture</div>
+          <div class="eyebrow"><span class="dot"></span> MeshCore Solo &middot; Screenshots</div>
           <h1>Capture the live display as PNG files in the browser.</h1>
           <p class="lede">
             Connect directly to the device over USB, request screenshots from the firmware, and collect them in a gallery
@@ -911,6 +929,7 @@
             <button id="shotConnectBtn" class="primary">Connect device</button>
             <button id="shotDisconnectBtn" class="secondary" disabled>Disconnect</button>
             <button id="shotCaptureBtn" class="secondary" disabled>Capture screenshot</button>
+            <a href="https://github.com/MarekZegare4/MeshCore-Solo" target="_blank" rel="noopener noreferrer" class="ghost link-btn">GitHub ↗</a>
           </div>
 
           <div class="hero-actions screenshot-actions">
@@ -940,7 +959,7 @@
 
           <div class="info-grid">
             <div class="stat">
-              <div class="label">Connection</div>
+              <div class="label">Status</div>
               <div class="value" id="shotConnectionValue">Not connected</div>
             </div>
             <div class="stat">
@@ -961,16 +980,16 @@
             <div class="step">
               <div class="num">1</div>
               <h3>Connect</h3>
-              <p>Open this page, then connect to the tracker over USB.</p>
+              <p>Click <strong>Connect</strong> and pick the Solo in the browser serial port picker.</p>
             </div>
             <div class="step">
               <div class="num">2</div>
-              <h3>Capture screenshots</h3>
-              <p>Use the firmware screenshot feature. Each capture is decoded in the browser and added to the gallery.</p>
+              <h3>Capture</h3>
+              <p>Click <strong>Capture screenshot</strong> — the page requests the current display frame from the Solo firmware.</p>
             </div>
             <div class="step">
               <div class="num">3</div>
-              <h3>Download later</h3>
+              <h3>Download</h3>
               <p>Review the thumbnails, then download items individually or save the whole batch in one go.</p>
             </div>
           </div>
@@ -985,10 +1004,12 @@
 
           <div id="shotEnvironmentBanner" class="status-banner"></div>
 
+          <!-- status pills hidden — info covered by the environment banner above
           <div class="status-row">
             <div id="shotSerialPill" class="pill"><span class="dot"></span><span>Web Serial</span></div>
             <div id="shotSecurePill" class="pill"><span class="dot"></span><span>Secure context</span></div>
           </div>
+          -->
 
           <div class="progress-wrap">
             <div class="progress-meta">
@@ -1044,7 +1065,7 @@
       trailTabBtn.setAttribute("aria-selected", String(trailActive));
       shotTabBtn.setAttribute("aria-selected", String(!trailActive));
       trailPane.classList.toggle("hidden", !trailActive);
-      screenshotPane.classList.toggle("hidden", trailActive ? true : false);
+      screenshotPane.classList.toggle("hidden", trailActive);
       activeTab = nextTab;
     }
 
@@ -1130,6 +1151,7 @@
       }
 
       function setPill(pill, text, kind) {
+        if (!pill) return;
         pill.className = `pill ${kind || ""}`.trim();
         const span = pill.querySelector("span:last-child");
         span.textContent = text;
@@ -1360,7 +1382,7 @@
         filenameEditBtn.hidden = false;
         log.textContent = "";
         resetPreview();
-        appendLog("Ready. Connect, then start the GPX export on the tracker.", "dim");
+        appendLog("Ready. Connect, then start the GPX export on the Solo.", "dim");
         updateButtons();
         updateMetrics();
       }
@@ -1494,7 +1516,7 @@
         updateButtons();
         setPill(serialSupportPill, "Listening for GPX stream", "live");
         setStatus("Waiting for device export", "live");
-        appendLog("Listening. Trigger export on the tracker now.", "dim");
+        appendLog("Listening. Trigger export on the Solo now.", "dim");
 
         let prefixTail = "";
 
@@ -1666,11 +1688,11 @@
           environmentBanner.className = "status-banner secure-warning";
           environmentBanner.innerHTML = "<strong>Secure context required.</strong> Open this page from <code>http://localhost</code> or <code>https://</code>. Web Serial will not work from a plain <code>file://</code> URL.";
         } else if (!supportsSerial) {
-          environmentBanner.className = "status-banner secure-warning";
+          environmentBanner.className = "status-banner serial-error";
           environmentBanner.innerHTML = "<strong>Web Serial is unavailable here.</strong> Use Chrome/Edge or a Firefox build with Web Serial enabled.";
         } else {
           environmentBanner.className = "status-banner";
-          environmentBanner.innerHTML = "<strong>Ready.</strong> Connect the tracker, press Connect, then start the GPX export from the device menu.";
+          environmentBanner.innerHTML = "<strong>Ready.</strong> Connect the Solo, press Connect, then start the GPX export from the device menu.";
         }
       }
 
@@ -1750,6 +1772,7 @@
       }
 
       function shotSetPill(pill, text, kind) {
+        if (!pill) return;
         pill.className = `pill ${kind || ""}`.trim();
         const span = pill.querySelector("span:last-child");
         span.textContent = text;
@@ -1770,6 +1793,7 @@
         screenshotScale = Math.min(6, Math.max(1, Number(scaleRange.value) || 1));
         scaleRange.value = String(screenshotScale);
         scaleValue.textContent = `${screenshotScale}x`;
+        shotUpdateMetrics();
       }
 
       function shotUpdateMetrics() {
@@ -2408,7 +2432,7 @@
           }
           shotSetStatus("Connected at 115200 baud", "ok");
           shotSetPill(shotSerialPill, "Connected", "ok");
-          shotAppendLog("Connected. Trigger the firmware screenshot command from the device.", "good");
+          shotAppendLog("Connected. Click Capture screenshot to request a frame from the Solo.", "good");
           window.meshcoreDisconnectCurrent = disconnect;
           shotUpdateButtons();
         } catch (error) {
@@ -2444,11 +2468,11 @@
           shotEnvironmentBanner.className = "status-banner secure-warning";
           shotEnvironmentBanner.innerHTML = "<strong>Secure context required.</strong> Open this page from <code>http://localhost</code> or <code>https://</code>. Web Serial will not work from a plain <code>file://</code> URL.";
         } else if (!supportsSerial) {
-          shotEnvironmentBanner.className = "status-banner secure-warning";
+          shotEnvironmentBanner.className = "status-banner serial-error";
           shotEnvironmentBanner.innerHTML = "<strong>Web Serial is unavailable here.</strong> Use Chrome/Edge or a Firefox build with the API enabled.";
         } else {
           shotEnvironmentBanner.className = "status-banner";
-          shotEnvironmentBanner.innerHTML = "<strong>Ready.</strong> Connect the tracker, then capture screenshots from the device's screenshot command.";
+          shotEnvironmentBanner.innerHTML = "<strong>Ready.</strong> Connect the Solo, then click Capture screenshot to request a frame from the firmware.";
         }
       }
 
@@ -2471,7 +2495,7 @@
       shotSetStatus("Not connected", "default");
       shotUpdateGallery();
       shotUpdateButtons();
-      shotAppendLog("Ready. Connect, then capture screenshots from the firmware.", "dim");
+      shotAppendLog("Ready. Connect, then click Capture screenshot to grab a frame.", "dim");
     })();
   </script>
 </body>
