@@ -402,6 +402,17 @@
       font-size: 0.9rem;
     }
 
+    .preview-filters {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .preview-filters .tab-btn {
+      padding: 7px 12px;
+      font-size: 0.82rem;
+    }
+
     .preview-badge {
       display: inline-flex;
       align-items: center;
@@ -898,6 +909,11 @@
             </div>
             <div id="previewBadge" class="preview-badge">No trail loaded</div>
           </div>
+          <div id="previewFilters" class="preview-filters" hidden>
+            <button id="filterAll" class="tab-btn active" type="button">Full map</button>
+            <button id="filterTrail" class="tab-btn" type="button">Trail only</button>
+            <button id="filterWpts" class="tab-btn" type="button">Waypoints only</button>
+          </div>
           <div class="preview-frame">
             <div id="previewMap" class="preview-map">
               <div id="previewEmpty" class="preview-empty">
@@ -1094,6 +1110,10 @@
       const previewBadge = document.getElementById("previewBadge");
       const previewMap = document.getElementById("previewMap");
       const previewMeta = document.getElementById("previewMeta");
+      const previewFilters = document.getElementById("previewFilters");
+      const filterAllBtn = document.getElementById("filterAll");
+      const filterTrailBtn = document.getElementById("filterTrail");
+      const filterWptsBtn = document.getElementById("filterWpts");
       const filenameEditBtn = document.getElementById("filenameEditBtn");
       const filenameEditField = document.getElementById("filenameEditField");
       const environmentBanner = document.getElementById("environmentBanner");
@@ -1114,6 +1134,8 @@
       let decoder = new TextDecoder();
       let filenameEditing = false;
       let filenameSuppressNextBlur = false;
+      let previewData = null;
+      let previewFilter = "all";
 
       const supportsSerial = "serial" in navigator;
       const secureContext = window.isSecureContext;
@@ -1179,6 +1201,9 @@
         previewBadge.textContent = "No trail loaded";
         previewMap.innerHTML = `<div id="previewEmpty" class="preview-empty">The preview will appear here after a GPX export completes.</div>`;
         previewMeta.textContent = "";
+        previewData = null;
+        previewFilter = "all";
+        previewFilters.hidden = true;
       }
 
       function setPreviewMessage(message) {
@@ -1243,7 +1268,7 @@
         const parser = new DOMParser();
         const doc = parser.parseFromString(xmlText, "application/xml");
         if (doc.querySelector("parsererror")) {
-          return { error: "GPX parse error", segments: [] };
+          return { error: "GPX parse error", segments: [], waypoints: [] };
         }
 
         const segmentNodes = Array.from(doc.getElementsByTagNameNS("*", "trkseg"));
@@ -1266,33 +1291,29 @@
           }
         }
 
-        return { error: null, segments };
+        const waypoints = [];
+        for (const node of doc.getElementsByTagNameNS("*", "wpt")) {
+          const lat = Number.parseFloat(node.getAttribute("lat"));
+          const lon = Number.parseFloat(node.getAttribute("lon"));
+          if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+          const nameNode = node.getElementsByTagNameNS("*", "name")[0];
+          const label = nameNode ? nameNode.textContent.trim().slice(0, 2) : "";
+          waypoints.push({ lat, lon, label });
+        }
+
+        return { error: null, segments, waypoints };
       }
 
-      function renderTrailPreview(xmlText) {
-        const { error, segments } = parseTrackSegments(xmlText);
-        if (error) {
-          setPreviewMessage(error);
-          return;
-        }
-
-        const allPoints = segments.flat();
-        if (!allPoints.length) {
-          setPreviewMessage("No track points found in this GPX file.");
-          return;
-        }
+      function renderPreviewSVG(segments, waypoints) {
+        const trackPoints = segments.flat();
+        const allPoints = [...trackPoints, ...waypoints];
 
         const bounds = allPoints.reduce((acc, point) => ({
           minLat: Math.min(acc.minLat, point.lat),
           maxLat: Math.max(acc.maxLat, point.lat),
           minLon: Math.min(acc.minLon, point.lon),
           maxLon: Math.max(acc.maxLon, point.lon),
-        }), {
-          minLat: Infinity,
-          maxLat: -Infinity,
-          minLon: Infinity,
-          maxLon: -Infinity,
-        });
+        }), { minLat: Infinity, maxLat: -Infinity, minLon: Infinity, maxLon: -Infinity });
 
         const width = 960;
         const height = 540;
@@ -1300,19 +1321,37 @@
         const lonSpan = Math.max(bounds.maxLon - bounds.minLon, 1e-9);
         const latSpan = Math.max(bounds.maxLat - bounds.minLat, 1e-9);
         const scale = Math.min((width - pad * 2) / lonSpan, (height - pad * 2) / latSpan);
+        const offsetX = pad + (width - pad * 2 - lonSpan * scale) / 2;
+        const offsetY = pad + (height - pad * 2 - latSpan * scale) / 2;
         const mapPoint = (point) => {
-          const x = pad + (point.lon - bounds.minLon) * scale;
-          const y = height - pad - (point.lat - bounds.minLat) * scale;
+          const x = offsetX + (point.lon - bounds.minLon) * scale;
+          const y = (height - offsetY) - (point.lat - bounds.minLat) * scale;
           return `${x.toFixed(2)},${y.toFixed(2)}`;
         };
 
-        const polylines = segments.map((segment) => `<polyline points="${segment.map(mapPoint).join(" ")}" />`).join("");
-        const start = allPoints[0];
-        const end = allPoints[allPoints.length - 1];
-        const [startX, startY] = mapPoint(start).split(",");
-        const [endX, endY] = mapPoint(end).split(",");
+        const polylines = segments.map((seg) => `<polyline points="${seg.map(mapPoint).join(" ")}" />`).join("");
 
-        previewBadge.textContent = `${allPoints.length.toLocaleString()} points`;
+        let startEndMarkers = "";
+        if (trackPoints.length) {
+          const [sx, sy] = mapPoint(trackPoints[0]).split(",");
+          const [ex, ey] = mapPoint(trackPoints[trackPoints.length - 1]).split(",");
+          startEndMarkers = `
+            <circle cx="${sx}" cy="${sy}" r="9" fill="#8cffc1" stroke="#04111a" stroke-width="4"></circle>
+            <circle cx="${ex}" cy="${ey}" r="9" fill="#ffca78" stroke="#04111a" stroke-width="4"></circle>`;
+        }
+
+        const waypointMarkers = waypoints.map((wpt) => {
+          const [cx, cy] = mapPoint(wpt).split(",");
+          const label = escapeHtml(wpt.label);
+          return `<circle cx="${cx}" cy="${cy}" r="28" fill="#fff" stroke="#04111a" stroke-width="5"></circle>`
+            + (label ? `<text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="central" font-size="24" font-weight="800" fill="#04111a">${label}</text>` : "");
+        }).join("");
+
+        const badgeParts = [];
+        if (trackPoints.length) badgeParts.push(`${trackPoints.length.toLocaleString()} pts`);
+        if (waypoints.length) badgeParts.push(`${waypoints.length} wpt${waypoints.length === 1 ? "" : "s"}`);
+        previewBadge.textContent = badgeParts.join(" · ");
+
         previewMap.innerHTML = `
           <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Trail preview map">
             <defs>
@@ -1325,15 +1364,56 @@
             <g fill="none" stroke="url(#trailStroke)" stroke-linecap="round" stroke-linejoin="round" stroke-width="5">
               ${polylines}
             </g>
-            <circle cx="${startX}" cy="${startY}" r="9" fill="#8cffc1" stroke="#04111a" stroke-width="4"></circle>
-            <circle cx="${endX}" cy="${endY}" r="9" fill="#ffca78" stroke="#04111a" stroke-width="4"></circle>
+            ${startEndMarkers}
+            ${waypointMarkers}
           </svg>
         `;
-        previewMeta.innerHTML = [
-          `<span>Segments: ${segments.length.toLocaleString()}</span>`,
-          `<span>Start: ${start.lat.toFixed(5)}, ${start.lon.toFixed(5)}</span>`,
-          `<span>End: ${end.lat.toFixed(5)}, ${end.lon.toFixed(5)}</span>`,
-        ].join("");
+
+        const metaParts = [];
+        if (segments.length) metaParts.push(`<span>Segments: ${segments.length.toLocaleString()}</span>`);
+        if (trackPoints.length) {
+          const start = trackPoints[0];
+          const end = trackPoints[trackPoints.length - 1];
+          metaParts.push(`<span>Start: ${start.lat.toFixed(5)}, ${start.lon.toFixed(5)}</span>`);
+          metaParts.push(`<span>End: ${end.lat.toFixed(5)}, ${end.lon.toFixed(5)}</span>`);
+        }
+        if (waypoints.length) metaParts.push(`<span>Waypoints: ${waypoints.length}</span>`);
+        previewMeta.innerHTML = metaParts.join("");
+      }
+
+      function renderTrailPreview(xmlText) {
+        const { error, segments, waypoints } = parseTrackSegments(xmlText);
+        if (error) {
+          setPreviewMessage(error);
+          return;
+        }
+        const trackPoints = segments.flat();
+        if (![...trackPoints, ...waypoints].length) {
+          setPreviewMessage("No track points or waypoints found in this GPX file.");
+          return;
+        }
+
+        previewData = { segments, waypoints };
+        previewFilter = "all";
+
+        const hasBoth = trackPoints.length > 0 && waypoints.length > 0;
+        previewFilters.hidden = !hasBoth;
+        filterAllBtn.classList.add("active");
+        filterTrailBtn.classList.remove("active");
+        filterWptsBtn.classList.remove("active");
+
+        renderPreviewSVG(segments, waypoints);
+      }
+
+      function setPreviewFilter(filter) {
+        if (!previewData) return;
+        previewFilter = filter;
+        filterAllBtn.classList.toggle("active", filter === "all");
+        filterTrailBtn.classList.toggle("active", filter === "trail");
+        filterWptsBtn.classList.toggle("active", filter === "waypoints");
+        const segs = filter === "waypoints" ? [] : previewData.segments;
+        const wpts = filter === "trail" ? [] : previewData.waypoints;
+        renderPreviewSVG(segs, wpts);
       }
 
       function updateProgress() {
@@ -1664,6 +1744,10 @@
       downloadLink.addEventListener("click", () => {
         appendLog(`Downloading ${downloadFileName}`, "good");
       });
+
+      filterAllBtn.addEventListener("click", () => setPreviewFilter("all"));
+      filterTrailBtn.addEventListener("click", () => setPreviewFilter("trail"));
+      filterWptsBtn.addEventListener("click", () => setPreviewFilter("waypoints"));
 
       window.addEventListener("beforeunload", () => {
         if (downloadUrl) {
